@@ -15,7 +15,6 @@ from __future__ import absolute_import
 from __future__ import division
 
 # Global
-import os
 import numpy as np
 import pandas as pd
 from getdist import MCSamples
@@ -36,6 +35,7 @@ log = logging.getLogger(__name__)
 enlargement_size = 100
 enlargement_factor = None
 
+
 class Collection():
 
     def __init__(self, parametrisation, likelihood, output=None,
@@ -46,9 +46,9 @@ class Collection():
         # Create the dataframe structure
         columns = [_weight, _minuslogpost]
         columns += list(self.sampled_params)
-        columns += [_derived_pre+name for name in self.derived_params]
+        columns += [_derived_pre+p for p in self.derived_params]
         columns += [_minuslogprior]
-        self.chi2_names = [_chi2+separator+name for name in likelihood]
+        self.chi2_names = [_chi2+separator+p for p in likelihood]
         columns += [_chi2] + self.chi2_names
         # Create the main data frame and the tracking index
         self.data = pd.DataFrame(np.zeros((initial_size,len(columns))), columns=columns)
@@ -69,9 +69,13 @@ class Collection():
             self.driver = "dummy"
 
     def add(self, values, derived=None,
-                  weight=1, logpost=None, logprior=None, logliks=None):
-        self.enlarge_if_needed()
-        self.data[_weight][self._n] = weight
+                  weight=1, logpost=None, logprior=None, logliks=None, at=-1):
+        if at == -1:
+            at = self._n
+        elif at < -1:
+            log.error("No negative values allowed, except for -1 ('at the end').")
+        self.enlarge_if_needed(at)
+        self.data[_weight][at] = weight
         if logpost == None:
             try:
                 logpost = logprior + sum(logliks)
@@ -79,31 +83,50 @@ class Collection():
                 log.error("If a log-posterior is not specified, you need to pass "
                           "a log-likelihood and a log-prior.")
                 raise HandledException
-        self.data[_minuslogpost][self._n] = -logpost
+        self.data[_minuslogpost][at] = -logpost
         if logprior != None:
-            self.data[_minuslogprior][self._n] = -logprior
+            self.data[_minuslogprior][at] = -logprior
         if logliks is not None:
             for name, value in zip(self.chi2_names, logliks):
-                self.data[name][self._n] = -2*value
-            self.data[_chi2][self._n] = sum(self.data[self.chi2_names].values[self._n])
+                self.data[name][at] = -2*value
+            self.data[_chi2][at] = sum(self.data[self.chi2_names].values[at])
         for name, value in zip(self.sampled_params, values):
-            self.data[name][self._n] = value
+            self.data[name][at] = value
         if derived is not None:
             for name, value in zip(self.derived_params, derived):
-                self.data[_derived_pre+name][self._n] = value
-        self._n += 1
+                self.data[_derived_pre+name][at] = value
+        self._n = max(self._n, at + 1)
 
-    def enlarge_if_needed(self):
-        if self._n >= self.data.shape[0]:
+    def enlarge_if_needed(self, upto=None):
+        if upto is None:
+            upto = self._n
+        if upto >= self.data.shape[0]:
             if enlargement_factor:
-                enlarge_by = self.data.shape[0]*enlargement_factor
+                enlarge_by = upto-self._n + upto*enlargement_factor
             else:
-                enlarge_by = enlargement_size
-            self.data = pd.concat([self.data,
-                pd.DataFrame(np.zeros((enlarge_by, self.data.shape[1])), 
-                             columns=self.data.columns,
-                             index=np.arange(self.n(),self.n()+enlarge_by))])
-        
+                enlarge_by = upto-self._n + enlargement_size
+            self.data = pd.concat(
+                [self.data, pd.DataFrame(np.zeros((enlarge_by, self.data.shape[1])),
+                                         columns=self.data.columns,
+                                         index=np.arange(self.n(),self.n()+enlarge_by))])
+
+    def add_i_to_collection(self, i, collection, at=-1):
+        """Adds point 'i' from this collection to a different one,
+        at position 'j' (default: at the end)."""
+        point = self.data.iloc[i]
+        if at == -1:
+            at = collection.n()
+        elif at < -1:
+            log.error("No negative values allowed, except for -1 ('at the end').")
+        collection.add(
+            point[self.sampled_params],
+            derived=(point[[_derived_pre+p for p in self.derived_params]]
+                     if self.derived_params else None),
+            logpost=-point[_minuslogpost], weight=point[_weight],
+            logprior=-point[_minuslogprior],
+            logliks=-0.5*np.array(point[self.chi2_names]),
+            at=at)
+
     # Retrieve-like methods
     def n(self):
         return self._n
@@ -241,14 +264,8 @@ class OnePoint(Collection):
         
     def add_to_collection(self, collection):
         """Adds this point at the end of a given collection."""
-        collection.add(
-            self[self.sampled_params],
-            derived=(self[[_derived_pre+p for p in self.derived_params]]
-                     if self.derived_params else None),
-            logpost=-self[_minuslogpost], weight=self[_weight],
-            logprior=-self[_minuslogprior],
-            logliks=-0.5*np.array(self[self.chi2_names]))
-    
+        self.add_i_to_collection(0, collection)
+        
     # Make the dataframe printable (but only the filled ones!)
     def __repr__(self):
         return self.data[:1].__repr__()
