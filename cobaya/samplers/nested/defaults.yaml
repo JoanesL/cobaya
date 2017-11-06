@@ -1,0 +1,17 @@
+# Basic Nested sampler with ellipsoidal sampling from the prior
+
+sampler:
+  nested:
+    # Increase for smaller chance of bias
+    nlive_dim: 20
+    # Increase for sampling weird shapes
+    enlargement_factor: 2
+    # Stopping conditions:
+    # --------------------
+    # Fraction of the evidence contained in the live sample ...
+    evidence_tolerance: 0.01
+    # ... for n iterations
+    evidence_tolerance_n: 5
+    # Total number of likelihood evaluation allowed
+    ntotal_dim: inf
+
