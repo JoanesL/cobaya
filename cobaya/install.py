@@ -22,7 +22,7 @@ import shutil
 from cobaya.log import logger_setup, HandledException
 from cobaya.tools import get_folder, make_header
 from cobaya.input import get_modules
-from cobaya.conventions import package, _code, _data
+from cobaya.conventions import package, _code, _data, _likelihood
 
 log = logging.getLogger(__name__.split(".")[-1])
 
@@ -46,17 +46,26 @@ def install(*infos, **kwargs):
         for module in modules:
             print(make_header(kind, module))
             module_folder = get_folder(module, kind, sep=".", absolute=False)
-            imported_module = import_module(module_folder, package=package)
+            try:
+                imported_module = import_module(module_folder, package=package)
+            except ImportError:
+                if kind == _likelihood:
+                    log.warn("Module '%s' not recognised. Assuming it's a custom "
+                             "likelihood. Nothing to do.\n", module)
+                else:
+                    log.error("Module '%s' not recognised.\n"%module)
+                    failed_modules += ["%s:%s"%(kind, module)]
+                continue
             is_installed = getattr(imported_module, "is_installed", None)
             if is_installed is None:
-                print("Not and external module: nothing to do.\n")
+                log.info("Built-in module: nothing to do.\n")
                 continue
             if is_installed(path=abspath, **kwargs_install):
-                print("External module already installed.")
+                log.info("External module already installed.\n")
                 if kwargs_install["force"]:
-                    print("Forcing re-installation, as requested.")
+                    log.info("Forcing re-installation, as requested.")
                 else:
-                    print("Doing nothing.\n")
+                    log.info("Doing nothing.\n")
                     continue
             try:
                 success = imported_module.install(path=abspath, **kwargs_install)
@@ -66,7 +75,7 @@ def install(*infos, **kwargs):
                           "again. Notify the developers if this error persists.")
                 success = False
             if success:
-                print("Successfully installed!\n")
+                log.info("Successfully installed!\n")
             else:
                 log.error("Installation failed! Look at the error messages above. "
                           "Solve them and try again, or, if you are unable to solve, "
@@ -83,7 +92,7 @@ def install(*infos, **kwargs):
                 failed_modules += ["%s:%s"%(kind, module)]
     if failed_modules:
         log.error("The instalation (or installation test) of some module(s) has failed: "
-                  "%r. Check output above.", failed_modules)
+                  "%r. Check output above.\n", failed_modules)
         raise HandledException
 
 
