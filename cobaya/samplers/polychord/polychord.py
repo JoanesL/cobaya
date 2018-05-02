@@ -159,7 +159,7 @@ class polychord(Sampler):
                               self.pc_settings, self.pc_prior)
 
     def save_sample(self, fname, name):
-        sample = np.loadtxt(fname)
+        sample = np.atleast_2d(np.loadtxt(fname))
         collection = Collection(
             self.parametrization, self.likelihood, self.output, name=str(name))
         for row in sample:
