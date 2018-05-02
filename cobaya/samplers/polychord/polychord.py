@@ -20,10 +20,10 @@ import inspect
 from cobaya.conventions import _path_install
 from cobaya.tools import get_path_to_installation
 from cobaya.sampler import Sampler
-from cobaya.mpi import get_mpi, get_mpi_comm, get_mpi_rank
+from cobaya.mpi import get_mpi_rank
 from cobaya.collection import Collection
 from cobaya.log import HandledException
-from cobaya.install import download_github_release
+from cobaya.install import download_github_release, user_flag_if_needed
 
 clusters = "clusters"
 
@@ -50,8 +50,8 @@ class polychord(Sampler):
                                "does not exist: %s", self.path)
                 raise HandledException
         sys.path.insert(0, self.path)
-        import PyPolyChord_ctypes as PyPolyChord
-        from PyPolyChord_ctypes.settings import PolyChordSettings
+        import PyPolyChord as PyPolyChord
+        from PyPolyChord.settings import PolyChordSettings
         self.pc = PyPolyChord
         # Prepare arguments and settings
         self.nDims = self.prior.d()
@@ -210,7 +210,8 @@ class polychord(Sampler):
             with open(prefix+".stats", "r") as statsfile:
                 lines = [l for l in statsfile.readlines() if l.startswith(pre)]
             for l in lines:
-                logZ, logZstd = [float(n) for n in l.split("=")[-1].split("+/-")]
+                logZ, logZstd = [float(n.replace("(Still Active)", "")) for n in
+                                 l.split("=")[-1].split("+/-")]
                 component = l.split("=")[0].lstrip(pre+"_").rstrip(") ")
                 if not component:
                     self.logZ, self.logZstd = logZ, logZstd
@@ -246,7 +247,7 @@ class polychord(Sampler):
 
 # Name of the PolyChord repo and version to download
 pc_repo_name = "PolyChord"
-pc_repo_version = "v1.12.ctypes1.0"
+pc_repo_version = "v1.14.patch1"
 
 
 def get_path(path):
@@ -279,6 +280,14 @@ def install(path=None, force=False, code=False, data=False, no_progress_bars=Fal
     my_env["PWD"] = cwd
     process_make = Popen(["make", "PyPolyChord", "MPI=1"], cwd=cwd, env=my_env,
                          stdout=PIPE, stderr=PIPE)
+    out, err = process_make.communicate()
+    if process_make.returncode:
+        log.info(out)
+        log.info(err)
+        log.error("Compilation failed!")
+        return False
+    process_make = Popen(["python", "setup.py", "install"] + user_flag_if_needed(),
+                         cwd=cwd, env=my_env, stdout=PIPE, stderr=PIPE)
     out, err = process_make.communicate()
     if process_make.returncode:
         log.info(out)
