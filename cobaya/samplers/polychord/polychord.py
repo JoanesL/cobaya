@@ -2,7 +2,7 @@
 .. module:: samplers.polychord
 
 :Synopsis: PolyChord nested sampler (REFERENCES)
-:Author: Will Handley, Mike Hobson and Anthony Lasenby (for PolyChord), Jesus Torrado (for the wrapper only)
+:Author: Will Handley, Mike Hobson and Anthony Lasenby (for PolyChord), Jesus Torrado (for the cobaya wrapper only)
 
 """
 # Python 2/3 compatibility
@@ -17,13 +17,12 @@ import logging
 import inspect
 
 # Local
-from cobaya.conventions import _path_install
 from cobaya.tools import get_path_to_installation
 from cobaya.sampler import Sampler
 from cobaya.mpi import get_mpi_rank
 from cobaya.collection import Collection
 from cobaya.log import HandledException
-from cobaya.install import download_github_release, user_flag_if_needed
+from cobaya.install import download_github_release
 
 clusters = "clusters"
 
@@ -33,25 +32,38 @@ class polychord(Sampler):
         """Imports the PolyChord sampler and prepares its arguments."""
         if not get_mpi_rank():  # rank = 0 (MPI master) or None (no MPI)
             self.log.info("Initializing")
-        if not self.path:
-            path_to_installation = get_path_to_installation()
-            if path_to_installation:
-                self.path = os.path.join(
-                    path_to_installation, "code", pc_repo_name)
-        if self.path is None:
-            self.log.error("No path given for PolyChord. Set the "
-                           "likelihood property 'path' or the common property "
-                           "'%s'.", _path_install)
-            raise HandledException
-        if not get_mpi_rank():
-            self.log.info("Importing PolyChord from %s", self.path)
-            if not os.path.exists(self.path):
-                self.log.error("The path you indicated for PolyChord "
-                               "does not exist: %s", self.path)
+        # If path not given, try using general path to modules
+        path_to_installation = get_path_to_installation()
+        if not self.path and path_to_installation:
+            self.path = os.path.join(
+                path_to_installation, "code", pc_repo_name)
+        if self.path:
+            if not get_mpi_rank():
+                self.log.info("Importing *local* PolyChord from " + self.path)
+            pc_py_path = os.path.join(self.path, "PyPolyChord")
+            pc_build_path = os.path.join(self.path, "build")
+            post = next(d for d in os.listdir(pc_build_path) if d.startswith("lib."))
+            pc_build_path = os.path.join(pc_build_path, post)
+            if not os.path.exists(pc_build_path):
+                self.log.error("Either PolyChord is not in the given folder, "
+                               "'%s', or you have not compiled it.", self.path)
                 raise HandledException
-        sys.path.insert(0, self.path)
-        import PyPolyChord as PyPolyChord
-        from PyPolyChord.settings import PolyChordSettings
+            # Inserting the previously found path into the list of import folders
+            sys.path.insert(0, pc_build_path)
+            sys.path.insert(0, pc_py_path)
+        else:
+            self.log.info("Importing *global* PolyChord.")
+        try:
+            import PyPolyChord as PyPolyChord
+            from PyPolyChord.settings import PolyChordSettings
+        except ImportError:
+            self.log.error(
+                "Couldn't find the PolyChord python interface. "
+                "Make sure that you have compiled it, and that you either\n"
+                " (a) specify a path (you didn't) or\n"
+                " (b) install the Python interface globally with\n"
+                "     '/path/to/PolyChord/python setup.py install --user'")
+            raise HandledException
         self.pc = PyPolyChord
         # Prepare arguments and settings
         self.nDims = self.prior.d()
@@ -247,7 +259,7 @@ class polychord(Sampler):
 
 # Name of the PolyChord repo and version to download
 pc_repo_name = "PolyChord"
-pc_repo_version = "v1.14.patch1"
+pc_repo_version = "v1.14.patch3"
 
 
 def get_path(path):
@@ -286,7 +298,7 @@ def install(path=None, force=False, code=False, data=False, no_progress_bars=Fal
         log.info(err)
         log.error("Compilation failed!")
         return False
-    process_make = Popen(["python", "setup.py", "install"] + user_flag_if_needed(),
+    process_make = Popen(["python", "setup.py", "build"],
                          cwd=cwd, env=my_env, stdout=PIPE, stderr=PIPE)
     out, err = process_make.communicate()
     if process_make.returncode:
