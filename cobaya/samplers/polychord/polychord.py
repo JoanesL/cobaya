@@ -196,10 +196,12 @@ class polychord(Sampler):
             self.n_liks = len(self.likelihood._likelihoods)
             prefix = os.path.join(self.pc_settings.base_dir, self.pc_settings.file_root)
             self.collection = self.save_sample(prefix+".txt", "1")
-            if self.pc_settings.do_clustering is not False:  # None here means "default"
+            if self.pc_settings.do_clustering is not False:  # NB: "None" == "default"
                 self.clusters = {}
                 do_output = hasattr(self.output, "folder")
                 for f in os.listdir(os.path.join(self.pc_settings.base_dir, clusters)):
+                    if not f.startswith(self.pc_settings.file_root):
+                        continue
                     if do_output:
                         cluster_folder = os.path.join(
                             self.output.folder, self.output.prefix + "_" + clusters)
