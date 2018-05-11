@@ -12,6 +12,8 @@ from cobaya.likelihoods.gaussian import random_cov, info_random_gaussian
 
 # Kullback-Leibler divergence between 2 gaussians
 def KL_norm(m1=None, S1=np.array([]), m2=None, S2=np.array([])):
+    m1, m2 = [np.atleast_1d(m) for m in [m1, m2]]
+    S1, S2 = [np.atleast_2d(S) for S in [S1, S2]]
     assert S1.shape[0], "Must give at least S1"
     dim = S1.shape[0]
     if m1 is None:
