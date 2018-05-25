@@ -61,7 +61,7 @@ class minimize(Sampler):
         else:
             self.log.error("Finished UNsuccesfuly.")
 
-    def close(self):
+    def close(self, *args):
         """
         Determines success (or not), chooses best (if MPI)
         and produces output (if requested).
